@@ -4,6 +4,7 @@ Priority: optional
 Maintainer: Waqar Ahmed <waqar@ixsystems.com>
 Build-Depends: debhelper-compat (= 12),
                dh-python,
+               python3-dateutil,
                python3-dev,
                python3-josepy,
                python3-acme,
@@ -20,6 +21,7 @@ Depends: python3-josepy,
          python3-jsonschema,
          python3-acme,
          python3-cryptography,
+         python3-dateutil,
          ${shlibs:Depends},
          ${misc:Depends},
          ${python3:Depends}
