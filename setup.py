@@ -9,8 +9,8 @@ setup(
     version=VERSION,
     include_package_data=True,
     packages=find_packages(include=[
-        'acme_utils',
-        'acme_utils.*',
+        'truenas_acme_utils',
+        'truenas_acme_utils.*',
         'truenas_crypto_utils',
         'truenas_crypto_utils.*',
     ]),
