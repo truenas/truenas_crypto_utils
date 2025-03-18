@@ -3,14 +3,9 @@ import ipaddress
 import random
 
 from cryptography import x509
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import serialization
 from cryptography.x509.oid import NameOID
 
-from .extensions import add_extensions
-from .key import retrieve_signing_algorithm
-from .read import load_certificate, load_certificate_request, load_private_key
-from .utils import DEFAULT_LIFETIME_DAYS, RDN_MAPPINGS, utc_now
+from .utils import DEFAULT_LIFETIME_DAYS, utc_now
 
 
 def generate_builder(options: dict) -> x509.CertificateBuilder | x509.CertificateSigningRequestBuilder:
@@ -76,35 +71,3 @@ def normalize_san(san_list: list) -> list:
         normalized.append([san_type, san])
 
     return normalized
-
-
-def sign_csr_with_ca(data):
-    csr_data = load_certificate_request(data['csr'])
-    ca_data = load_certificate(data['ca_certificate'])
-    ca_key = load_private_key(data['ca_privatekey'])
-    csr_key = load_private_key(data['csr_privatekey'])
-    new_cert = generate_builder({
-        'crypto_subject_name': {
-            RDN_MAPPINGS[k]: v
-            for k, v in (item.split('=') for item in csr_data['DN'].split('/') if item)
-            if k in RDN_MAPPINGS
-        },
-        'crypto_issuer_name': {
-            RDN_MAPPINGS[k]: v
-            for k, v in (item.split('=') for item in ca_data['DN'].split('/') if item)
-            if k in RDN_MAPPINGS
-        },
-        'serial': data['serial'],
-        'san': normalize_san(csr_data.get('san'))
-    })
-
-    new_cert = add_extensions(
-        new_cert, data.get('cert_extensions'), csr_key,
-        x509.load_pem_x509_certificate(data['ca_certificate'].encode(), default_backend())
-    )
-
-    new_cert = new_cert.sign(
-        ca_key, retrieve_signing_algorithm(data, ca_key), default_backend()
-    )
-
-    return new_cert.public_bytes(serialization.Encoding.PEM).decode()
