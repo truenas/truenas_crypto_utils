@@ -1,4 +1,4 @@
-crypto-utils (0.1-0~truenas+1) bullseye-truenas-unstable; urgency=medium
+truenas-crypto-utils (0.1-0~truenas+1) bullseye-truenas-unstable; urgency=medium
 
   * Initial release
 
