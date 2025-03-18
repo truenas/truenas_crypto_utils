@@ -5,7 +5,7 @@ from cryptography.hazmat.primitives import serialization
 from .extensions import add_extensions
 from .generate_utils import generate_builder, normalize_san
 from .key import export_private_key_object, generate_private_key, retrieve_signing_algorithm
-from .load import load_certificate, load_private_key
+from .read import load_certificate, load_private_key
 from .utils import CERT_BACKEND_MAPPINGS, EC_CURVE_DEFAULT
 
 
