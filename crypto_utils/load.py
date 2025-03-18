@@ -9,7 +9,6 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed25519, ed448, rsa
 from OpenSSL import crypto
-from typing import Optional, Union
 
 from .utils import RE_CERTIFICATE
 
@@ -74,7 +73,7 @@ def load_certificate(certificate: str, get_issuer: bool = False) -> dict:
         return cert_info
 
 
-def get_x509_subject(obj: Union[crypto.X509, crypto.X509Req]) -> dict:
+def get_x509_subject(obj: crypto.X509 | crypto.X509Req) -> dict:
     cert_info = {
         'country': obj.get_subject().C,
         'state': obj.get_subject().ST,
@@ -137,13 +136,10 @@ def load_certificate_request(csr: str) -> dict:
         return get_x509_subject(csr_obj)
 
 
-def load_private_key(key_string: str, passphrase: Optional[str] = None) -> Union[
-    ed25519.Ed25519PrivateKey,
-    ed448.Ed448PrivateKey,
-    rsa.RSAPrivateKey,
-    dsa.DSAPrivateKey,
-    ec.EllipticCurvePrivateKey,
-]:
+def load_private_key(key_string: str, passphrase: str | None = None) -> (
+    ed25519.Ed25519PrivateKey | ed448.Ed448PrivateKey | rsa.RSAPrivateKey |
+    dsa.DSAPrivateKey | ec.EllipticCurvePrivateKey
+):
     with suppress(ValueError, TypeError, AttributeError):
         return serialization.load_pem_private_key(
             key_string.encode(),
@@ -152,7 +148,7 @@ def load_private_key(key_string: str, passphrase: Optional[str] = None) -> Union
         )
 
 
-def get_serial_from_certificate_safe(certificate: Union[str, None]) -> Optional[int]:
+def get_serial_from_certificate_safe(certificate: str | None) -> int | None:
     try:
         cert = crypto.load_certificate(crypto.FILETYPE_PEM, certificate)
     except crypto.Error:

@@ -1,5 +1,3 @@
-import typing
-
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
@@ -11,7 +9,7 @@ from .load import load_certificate, load_private_key
 from .utils import CERT_BACKEND_MAPPINGS, EC_CURVE_DEFAULT
 
 
-def generate_certificate(data: dict) -> typing.Tuple[str, str]:
+def generate_certificate(data: dict) -> tuple[str, str]:
     key = generate_private_key({
         'type': data.get('key_type') or 'RSA',
         'curve': data.get('ec_curve') or EC_CURVE_DEFAULT,
