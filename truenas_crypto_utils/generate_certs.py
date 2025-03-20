@@ -25,7 +25,7 @@ def generate_certificate(data: dict) -> tuple[str, str]:
 
     builder_data = {
         'crypto_subject_name': {
-            k: data.get(v) for k, v in CERT_BACKEND_MAPPINGS.items()
+            k: data[v] for k, v in CERT_BACKEND_MAPPINGS.items() if data.get(v)
         },
         'san': san_list,
         'serial': data.get('serial'),
@@ -34,7 +34,7 @@ def generate_certificate(data: dict) -> tuple[str, str]:
     if data.get('ca_certificate'):
         ca_data = load_certificate(data['ca_certificate'])
         builder_data['crypto_issuer_name'] = {
-            k: ca_data.get(v) for k, v in CERT_BACKEND_MAPPINGS.items()
+            k: ca_data[v] for k, v in CERT_BACKEND_MAPPINGS.items() if ca_data.get(v)
         }
         issuer = x509.load_pem_x509_certificate(data['ca_certificate'].encode(), default_backend())
     else:
