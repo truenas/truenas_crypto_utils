@@ -16,12 +16,12 @@ def generate_certificate_signing_request(data: dict) -> tuple[str, str]:
 
     csr = generate_builder({
         'crypto_subject_name': {
-            k: data.get(v) for k, v in CERT_BACKEND_MAPPINGS.items()
+            k: data[v] for k, v in CERT_BACKEND_MAPPINGS.items() if data.get(v)
         },
         'san': normalize_san(data.get('san') or []),
         'serial': data.get('serial'),
         'lifetime': data.get('lifetime'),
-        'csr': True
+        'csr': True,
     })
 
     csr = add_extensions(csr, data.get('cert_extensions', {}), key, None)
