@@ -1,8 +1,9 @@
 import inspect
 import logging
 
-from acme_utils.exceptions import CallError
 from typing import Callable
+
+from .exceptions import CallError
 
 
 logger = logging.getLogger(__name__)
