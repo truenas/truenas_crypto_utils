@@ -28,6 +28,9 @@ class EventCallback:
     def clear(self):
         self.CALLBACKS = []
 
+    def remove_callback(self, callback: Callable):
+        self.CALLBACKS.remove(callback)
+
 
 event_callbacks = EventCallback()
 
