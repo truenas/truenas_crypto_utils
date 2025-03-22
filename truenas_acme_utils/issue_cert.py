@@ -14,7 +14,9 @@ from .exceptions import CallError
 logger = logging.getLogger(__name__)
 
 
-def issue_certificate(acme_client_key_payload: dict, csr: str, authenticator_mapping_copy: dict):
+def issue_certificate(
+    acme_client_key_payload: dict, csr: str, authenticator_mapping_copy: dict, progress_base: int = 25
+):
     # Authenticator mapping should be a valid mapping of domain to authenticator object
     acme_client, key = get_acme_client_and_key(acme_client_key_payload)
     try:
@@ -23,7 +25,7 @@ def issue_certificate(acme_client_key_payload: dict, csr: str, authenticator_map
     except messages.Error as e:
         raise CallError(f'Failed to issue a new order for Certificate : {e}')
     else:
-        send_event(25, 'New order for certificate issuance placed')
+        send_event(progress_base, 'New order for certificate issuance placed')
 
         authenticator_mapping = {}
         for d, v in map(lambda v: (v[0].split(':', 1)[-1], v[1]), authenticator_mapping_copy.items()):
@@ -34,7 +36,7 @@ def issue_certificate(acme_client_key_payload: dict, csr: str, authenticator_map
                 authenticator_mapping[d.replace('*.', '')] = v
 
         try:
-            handle_authorizations(25, order, authenticator_mapping, acme_client, key)
+            handle_authorizations(progress_base, order, authenticator_mapping, acme_client, key)
 
             try:
                 # Polling for a maximum of 10 minutes while trying to finalize order
