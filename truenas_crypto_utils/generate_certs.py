@@ -40,7 +40,7 @@ def generate_certificate(data: dict) -> tuple[str, str]:
     else:
         issuer = None
 
-    cert = add_extensions(generate_builder(builder_data), data.get('cert_extensions'), key, issuer)
+    cert = add_extensions(generate_builder(builder_data), data.get('cert_extensions', {}), key, issuer)
 
     cert = cert.sign(
         ca_key or key, retrieve_signing_algorithm(data, ca_key or key), default_backend()
