@@ -7,7 +7,7 @@ from .key import export_private_key_object, generate_private_key, retrieve_signi
 from .utils import CERT_BACKEND_MAPPINGS, EC_CURVE_DEFAULT
 
 
-def generate_certificate_signing_request(data: dict) -> tuple[str, str]:
+def generate_certificate_signing_request(data: dict) -> tuple[bytes, str]:
     key = generate_private_key({
         'type': data.get('key_type') or 'RSA',
         'curve': data.get('ec_curve') or EC_CURVE_DEFAULT,
@@ -27,4 +27,4 @@ def generate_certificate_signing_request(data: dict) -> tuple[str, str]:
     csr = add_extensions(csr, data.get('cert_extensions', {}), key, None)
     csr = csr.sign(key, retrieve_signing_algorithm(data, key), default_backend())
 
-    return csr.public_bytes(serialization.Encoding.PEM).decode(), export_private_key_object(key)
+    return csr.public_bytes(serialization.Encoding.PEM), export_private_key_object(key)

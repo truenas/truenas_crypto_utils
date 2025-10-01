@@ -131,7 +131,7 @@ def parse_name_components(obj: crypto.X509Name) -> str:
     return f'/{"/".join(dn)}'
 
 
-def load_certificate_request(csr: str) -> dict:
+def load_certificate_request(csr: bytes) -> dict:
     try:
         csr_obj = crypto.load_certificate_request(crypto.FILETYPE_PEM, csr.encode())
     except crypto.Error:
