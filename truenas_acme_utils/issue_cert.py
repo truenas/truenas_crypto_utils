@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def issue_certificate(
     acme_client_key_payload: ACMEClientAndKeyData, csr: bytes, authenticator_mapping_copy: dict, progress_base: int = 25
-):
+) -> messages.OrderResource:
     # Authenticator mapping should be a valid mapping of domain to authenticator object
     acme_client, key = get_acme_client_and_key(acme_client_key_payload)
     try:

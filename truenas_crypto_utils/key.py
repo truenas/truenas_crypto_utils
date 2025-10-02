@@ -15,10 +15,7 @@ GeneratedPrivateKey: TypeAlias = Ed25519PrivateKey | rsa.RSAPrivateKey | ec.Elli
 PrivateKey: TypeAlias = GeneratedPrivateKey | Ed448PrivateKey | DSAPrivateKey
 
 
-def retrieve_signing_algorithm(
-    data: dict,
-    signing_key: PrivateKey,
-):
+def retrieve_signing_algorithm(data: dict, signing_key: PrivateKey):
     if isinstance(signing_key, Ed25519PrivateKey):
         return None
     else:
