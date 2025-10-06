@@ -5,6 +5,7 @@ import logging
 import re
 
 from contextlib import suppress
+from typing import TypeAlias
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed25519, ed448, rsa
@@ -13,10 +14,13 @@ from OpenSSL import crypto
 from .utils import RE_CERTIFICATE
 
 
+GeneratedPrivateKey: TypeAlias = ed25519.Ed25519PrivateKey | rsa.RSAPrivateKey | ec.EllipticCurvePrivateKey
+PrivateKey: TypeAlias = GeneratedPrivateKey | ed448.Ed448PrivateKey | dsa.DSAPrivateKey
+
 logger = logging.getLogger(__name__)
 
 
-def parse_cert_date_string(date_value: str) -> str:
+def parse_cert_date_string(date_value: bytes | str) -> str:
     t1 = dateutil.parser.parse(date_value)
     t2 = t1.astimezone(dateutil.tz.tzlocal())
     return t2.ctime()
@@ -127,19 +131,16 @@ def parse_name_components(obj: crypto.X509Name) -> str:
     return f'/{"/".join(dn)}'
 
 
-def load_certificate_request(csr: bytes) -> dict:
+def load_certificate_request(csr: str) -> dict:
     try:
-        csr_obj = crypto.load_certificate_request(crypto.FILETYPE_PEM, csr)
+        csr_obj = crypto.load_certificate_request(crypto.FILETYPE_PEM, csr.encode())
     except crypto.Error:
         return {}
     else:
         return get_x509_subject(csr_obj)
 
 
-def load_private_key(key_string: str, passphrase: str | None = None) -> (
-    ed25519.Ed25519PrivateKey | ed448.Ed448PrivateKey | rsa.RSAPrivateKey |
-    dsa.DSAPrivateKey | ec.EllipticCurvePrivateKey
-):
+def load_private_key(key_string: str, passphrase: str | None = None) -> PrivateKey:
     with suppress(ValueError, TypeError, AttributeError):
         return serialization.load_pem_private_key(
             key_string.encode(),

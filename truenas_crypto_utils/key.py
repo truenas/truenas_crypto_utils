@@ -1,4 +1,4 @@
-from typing import Literal, TypeAlias, overload
+from typing import Literal, overload
 
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.hazmat.primitives.asymmetric.dsa import DSAPrivateKey
@@ -7,12 +7,8 @@ from cryptography.hazmat.primitives.asymmetric.ed448 import Ed448PrivateKey
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 
-from .read import load_private_key
+from .read import GeneratedPrivateKey, PrivateKey, load_private_key
 from .utils import EC_CURVE_DEFAULT
-
-
-GeneratedPrivateKey: TypeAlias = Ed25519PrivateKey | rsa.RSAPrivateKey | ec.EllipticCurvePrivateKey
-PrivateKey: TypeAlias = GeneratedPrivateKey | Ed448PrivateKey | DSAPrivateKey
 
 
 def retrieve_signing_algorithm(data: dict, signing_key: PrivateKey):

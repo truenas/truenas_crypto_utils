@@ -15,13 +15,13 @@ logger = logging.getLogger(__name__)
 
 
 def issue_certificate(
-    acme_client_key_payload: ACMEClientAndKeyData, csr: bytes, authenticator_mapping_copy: dict, progress_base: int = 25
+    acme_client_key_payload: ACMEClientAndKeyData, csr: str, authenticator_mapping_copy: dict, progress_base: int = 25
 ) -> messages.OrderResource:
     # Authenticator mapping should be a valid mapping of domain to authenticator object
     acme_client, key = get_acme_client_and_key(acme_client_key_payload)
     try:
         # perform operations and have a cert issued
-        order = acme_client.new_order(csr)
+        order = acme_client.new_order(csr.encode())
     except messages.Error as e:
         raise CallError(f'Failed to issue a new order for Certificate : {e}')
     else:
