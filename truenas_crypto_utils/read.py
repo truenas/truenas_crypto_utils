@@ -1,3 +1,4 @@
+import base64
 import datetime
 import dateutil
 import dateutil.parser
@@ -6,9 +7,11 @@ import re
 
 from contextlib import suppress
 from typing import TypeAlias
+from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed25519, ed448, rsa
+from cryptography.x509.oid import ExtensionOID
 from OpenSSL import crypto
 
 from .utils import RE_CERTIFICATE
@@ -18,6 +21,37 @@ GeneratedPrivateKey: TypeAlias = ed25519.Ed25519PrivateKey | rsa.RSAPrivateKey |
 PrivateKey: TypeAlias = GeneratedPrivateKey | ed448.Ed448PrivateKey | dsa.DSAPrivateKey
 
 logger = logging.getLogger(__name__)
+
+
+def _b64url(b: bytes) -> str:
+    return base64.urlsafe_b64encode(b).decode().rstrip("=")
+
+
+def _serial_value_bytes(n: int) -> bytes:
+    # DER INTEGER value bytes for non-negative n
+    if n == 0:
+        return b'\x00'
+    v = n.to_bytes((n.bit_length() + 7) // 8, 'big')
+    return v if not (v[0] & 0x80) else b'\x00' + v
+
+
+def get_cert_id(cert_str: str) -> str:
+    """
+    ARI cert_id per RFC 9773 §4.1
+    format: base64url(AKI.keyIdentifier) + "." + base64url(serial INTEGER value bytes)
+    """
+    cert = x509.load_pem_x509_certificate(cert_str.encode(), default_backend())
+    try:
+        aki_ext = cert.extensions.get_extension_for_oid(ExtensionOID.AUTHORITY_KEY_IDENTIFIER)
+    except x509.ExtensionNotFound as e:
+        raise ValueError('Certificate missing Authority Key Identifier (AKI)') from e
+
+    if aki_ext.value.key_identifier is None:
+        raise ValueError('AKI keyIdentifier is None')
+
+    aki_b64 = _b64url(aki_ext.value.key_identifier)
+    serial_b64 = _b64url(_serial_value_bytes(cert.serial_number))
+    return f'{aki_b64}.{serial_b64}'
 
 
 def parse_cert_date_string(date_value: bytes | str) -> str:
