@@ -22,7 +22,8 @@ def fetch_renewal_info(ari_endpoint: str, cert_id: str, retries: int = MAX_RETRI
     :param cert_id: Unique certificate identifier from get_cert_id()
     :param retries: Number of retries remaining for temporary errors
     :param timeout: Request timeout in seconds
-    :return: Dict with error field (None if success), suggestedWindow (start/end datetimes), optional explanationURL, retry_after
+    :return: Dict with error field (None if success), suggestedWindow (start/end datetimes),
+             optional explanationURL, retry_after
     """
     url = f'{ari_endpoint.rstrip("/")}/{cert_id}'
     backoff_delay = 1
