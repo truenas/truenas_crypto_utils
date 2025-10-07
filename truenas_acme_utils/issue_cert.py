@@ -6,7 +6,7 @@ import logging
 import josepy as jose
 from acme import errors, messages
 
-from .client_utils import ACMEClientAndKeyData, get_acme_client_and_key
+from .client_utils import ACMEClientAndKeyData, acme_order, get_acme_client_and_key
 from .event import send_event
 from .exceptions import CallError
 
@@ -21,7 +21,7 @@ def issue_certificate(
     acme_client, key = get_acme_client_and_key(acme_client_key_payload)
     try:
         # perform operations and have a cert issued
-        order = acme_client.new_order(csr.encode())
+        order = acme_order(acme_client, csr.encode())
     except messages.Error as e:
         raise CallError(f'Failed to issue a new order for Certificate : {e}')
     else:

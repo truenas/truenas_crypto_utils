@@ -2,7 +2,8 @@ import json
 import typing
 
 import josepy as jose
-from acme import client, messages
+from acme import client, crypto_util, messages
+from cryptography import x509
 
 
 class BodyDict(typing.TypedDict):
@@ -65,3 +66,39 @@ def get_acme_client_and_key(data: ACMEClientAndKeyData) -> tuple[client.ClientV2
         }),
         client.ClientNetwork(key, account=registration)
     ), key
+
+
+def acme_order(acme_client: client.ClientV2, csr_pem: bytes) -> messages.OrderResource:
+    csr = x509.load_pem_x509_csr(csr_pem)
+    dnsNames = crypto_util.get_names_from_subject_and_extensions(csr.subject, csr.extensions)
+    try:
+        san_ext = csr.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+    except x509.ExtensionNotFound:
+        ipNames = []
+    else:
+        ipNames = san_ext.value.get_values_for_type(x509.IPAddress)
+
+    identifiers = []
+    for name in dnsNames:
+        identifiers.append(messages.Identifier(typ=messages.IDENTIFIER_FQDN, value=name))
+
+    for ip in ipNames:
+        identifiers.append(messages.Identifier(typ=messages.IDENTIFIER_IP, value=str(ip)))
+
+    order = messages.NewOrder(identifiers=identifiers)
+    response = acme_client._post(acme_client.directory['newOrder'], order)
+    body = messages.Order.from_json(response.json())
+
+    authorizations = []
+    # pylint has trouble understanding our josepy based objects which use
+    # things like custom metaclass logic. body.authorizations should be a
+    # list of strings containing URLs so let's disable this check here.
+    for url in body.authorizations:  # pylint: disable=not-an-iterable
+        authorizations.append(acme_client._authzr_from_response(acme_client._post_as_get(url), uri=url))
+
+    return messages.OrderResource(
+        body=body,
+        uri=response.headers.get('Location'),
+        authorizations=authorizations,
+        csr_pem=csr_pem,
+    )
