@@ -6,6 +6,10 @@ from acme import client, crypto_util, messages
 from cryptography import x509
 
 
+class NewOrder(messages.NewOrder):
+    replaces: str = jose.field('replaces', omitempty=True)
+
+
 class BodyDict(typing.TypedDict):
     status: str
     key: str
@@ -68,7 +72,9 @@ def get_acme_client_and_key(data: ACMEClientAndKeyData) -> tuple[client.ClientV2
     ), key
 
 
-def acme_order(acme_client: client.ClientV2, csr_pem: bytes) -> messages.OrderResource:
+def acme_order(
+    acme_client: client.ClientV2, csr_pem: bytes, replaces_cert_id: str | None = None,
+) -> messages.OrderResource:
     csr = x509.load_pem_x509_csr(csr_pem)
     dnsNames = crypto_util.get_names_from_subject_and_extensions(csr.subject, csr.extensions)
     try:
@@ -85,7 +91,11 @@ def acme_order(acme_client: client.ClientV2, csr_pem: bytes) -> messages.OrderRe
     for ip in ipNames:
         identifiers.append(messages.Identifier(typ=messages.IDENTIFIER_IP, value=str(ip)))
 
-    order = messages.NewOrder(identifiers=identifiers)
+    payload = {'identifiers': identifiers}
+    if replaces_cert_id:
+        payload['replaces'] = replaces_cert_id
+
+    order = NewOrder(**payload)
     response = acme_client._post(acme_client.directory['newOrder'], order)
     body = messages.Order.from_json(response.json())
 
