@@ -17,6 +17,7 @@ class ACMEClientAndKeyData(typing.TypedDict):
     new_nonce_uri: str
     new_order_uri: str
     revoke_cert_uri: str
+    renewal_info: str | None
     body: BodyDict
 
 
@@ -29,6 +30,7 @@ def get_acme_client_and_key(data: ACMEClientAndKeyData) -> tuple[client.ClientV2
     - new_nonce_uri: str
     - new_order_uri: str
     - revoke_cert_uri: str
+    - renewal_info: str (optional)
     - body: dict
         - status: str
         - key: dict
@@ -58,7 +60,8 @@ def get_acme_client_and_key(data: ACMEClientAndKeyData) -> tuple[client.ClientV2
             'newAccount': data['new_account_uri'],
             'newNonce': data['new_nonce_uri'],
             'newOrder': data['new_order_uri'],
-            'revokeCert': data['revoke_cert_uri']
+            'revokeCert': data['revoke_cert_uri'],
+            **({'renewalInfo': data['renewal_info']} if data.get('renewal_info') else {}),
         }),
         client.ClientNetwork(key, account=registration)
     ), key
