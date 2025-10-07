@@ -24,7 +24,7 @@ def fetch_renewal_info(ari_endpoint: str, cert_id: str, retries: int = MAX_RETRI
     :param timeout: Request timeout in seconds
     :return: Dict with error field (None if success), suggestedWindow (start/end datetimes), optional explanationURL, retry_after
     """
-    url = f'{ari_endpoint}/{cert_id}'
+    url = f'{ari_endpoint.rstrip("/")}/{cert_id}'
     backoff_delay = 1
     response = None
 
