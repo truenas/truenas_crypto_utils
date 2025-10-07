@@ -1,9 +1,13 @@
 import json
+import OpenSSL
 import typing
 
 import josepy as jose
 from acme import client, crypto_util, messages
-from cryptography import x509
+
+
+class NewOrder(messages.NewOrder):
+    replaces: str = jose.field('replaces', omitempty=True)
 
 
 class BodyDict(typing.TypedDict):
@@ -68,27 +72,28 @@ def get_acme_client_and_key(data: ACMEClientAndKeyData) -> tuple[client.ClientV2
     ), key
 
 
-def acme_order(acme_client: client.ClientV2, csr_pem: str) -> messages.OrderResource:
-    csr = x509.load_pem_x509_csr(csr_pem)
-    dnsNames = crypto_util.get_names_from_subject_and_extensions(csr.subject, csr.extensions)
-    try:
-        san_ext = csr.extensions.get_extension_for_class(x509.SubjectAlternativeName)
-    except x509.ExtensionNotFound:
-        ipNames = []
-    else:
-        ipNames = san_ext.value.get_values_for_type(x509.IPAddress)
-
+def acme_order(
+    acme_client: client.ClientV2, csr_pem: str, replaces_cert_id: str | None = None,
+) -> messages.OrderResource:
+    csr = OpenSSL.crypto.load_certificate_request(OpenSSL.crypto.FILETYPE_PEM, csr_pem)
+    # pylint: disable=protected-access
+    dnsNames = crypto_util._pyopenssl_cert_or_req_all_names(csr)
+    ipNames = crypto_util._pyopenssl_cert_or_req_san_ip(csr)
+    # ipNames is now []string
     identifiers = []
     for name in dnsNames:
-        identifiers.append(messages.Identifier(typ=messages.IDENTIFIER_FQDN, value=name))
+        identifiers.append(messages.Identifier(typ=messages.IDENTIFIER_FQDN,
+                                               value=name))
+    for ips in ipNames:
+        identifiers.append(messages.Identifier(typ=messages.IDENTIFIER_IP,
+                                               value=ips))
+    payload = {'identifiers': identifiers}
+    if replaces_cert_id:
+        payload['replaces'] = replaces_cert_id
 
-    for ip in ipNames:
-        identifiers.append(messages.Identifier(typ=messages.IDENTIFIER_IP, value=str(ip)))
-
-    order = messages.NewOrder(identifiers=identifiers)
+    order = NewOrder(**payload)
     response = acme_client._post(acme_client.directory['newOrder'], order)
     body = messages.Order.from_json(response.json())
-
     authorizations = []
     # pylint has trouble understanding our josepy based objects which use
     # things like custom metaclass logic. body.authorizations should be a
