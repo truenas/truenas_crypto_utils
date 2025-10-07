@@ -53,7 +53,7 @@ def generate_builder(options: dict) -> x509.CertificateBuilder | x509.Certificat
     return cert
 
 
-def normalize_san(san_list: list) -> list:
+def normalize_san(san_list: list[str] | None) -> list[list[str]]:
     # TODO: ADD MORE TYPES WRT RFC'S
     normalized = []
     for count, san in enumerate(san_list or []):

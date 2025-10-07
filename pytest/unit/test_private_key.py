@@ -8,15 +8,23 @@ from truenas_crypto_utils.read import load_private_key
 
 
 @pytest.mark.parametrize('generate_params,expected_type,key_size', [
-    ({}, rsa.RSAPrivateKey, 2048),
-    ({'type': 'EC'}, ec.EllipticCurvePrivateKey, 384),
+    (
+        {},
+        rsa.RSAPrivateKey,
+        2048,
+    ),
+    (
+        {'type': 'EC'},
+        ec.EllipticCurvePrivateKey,
+        384,
+    ),
     (
         {
             'type': 'RSA',
             'key_length': 4096,
         },
         rsa.RSAPrivateKey,
-        4096
+        4096,
     ),
 ])
 def test_generating_private_key(generate_params, expected_type, key_size):

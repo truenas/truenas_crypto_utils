@@ -21,7 +21,6 @@ def generate_self_signed_certificate() -> tuple[str, str]:
         'san': normalize_san(['localhost'])
     })
     key = generate_private_key({
-        'serialize': False,
         'key_length': 2048,
         'type': 'RSA'
     })
