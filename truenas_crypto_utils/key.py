@@ -41,7 +41,7 @@ def generate_private_key(options: dict) -> (
             key = Ed25519PrivateKey.generate()
         else:
             key = ec.generate_private_key(
-                getattr(ec, options.get('curve')),
+                getattr(ec, options.get('curve'))(),
                 default_backend()
             )
     else:
