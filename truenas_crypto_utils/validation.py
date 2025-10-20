@@ -1,28 +1,35 @@
 import itertools
 
+from cryptography import x509
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from OpenSSL import crypto, SSL
+from cryptography.x509 import verification
 
 from .read import load_private_key
 from .utils import RE_CERTIFICATE
 
 
 def validate_cert_with_chain(cert: str, chain: list[str]) -> bool:
-    check_cert = crypto.load_certificate(crypto.FILETYPE_PEM, cert)
-    store = crypto.X509Store()
+    check_cert = x509.load_pem_x509_certificate(cert.encode(), default_backend())
+
+    # Build a list of trusted certificates from the chain
+    trusted_certs = []
     for chain_cert in itertools.chain.from_iterable(map(lambda c: RE_CERTIFICATE.findall(c), chain)):
-        store.add_cert(
-            crypto.load_certificate(crypto.FILETYPE_PEM, chain_cert)
+        trusted_certs.append(
+            x509.load_pem_x509_certificate(chain_cert.encode(), default_backend())
         )
 
-    store_ctx = crypto.X509StoreContext(store, check_cert)
     try:
-        store_ctx.verify_certificate()
-    except crypto.X509StoreContextError:
-        return False
-    else:
+        # Create a certificate store and verifier
+        # Use build_client_verifier for chain validation without specific server name
+        verification.PolicyBuilder().store(
+            verification.Store(trusted_certs)
+        ).build_client_verifier().verify(check_cert, [])
         return True
+    except Exception:
+        return False
 
 
 def validate_certificate_with_key(
@@ -31,19 +38,34 @@ def validate_certificate_with_key(
     if not certificate or not private_key:
         return
 
-    public_key_obj = crypto.load_certificate(crypto.FILETYPE_PEM, certificate)
-    private_key_obj = crypto.load_privatekey(
-        crypto.FILETYPE_PEM,
-        private_key,
-        passphrase=passphrase.encode() if passphrase else None
-    )
-
     try:
-        context = SSL.Context(SSL.TLSv1_2_METHOD)
-        context.use_certificate(public_key_obj)
-        context.use_privatekey(private_key_obj)
-        context.check_privatekey()
-    except SSL.Error as e:
+        cert = x509.load_pem_x509_certificate(certificate.encode(), default_backend())
+        private_key_obj = serialization.load_pem_private_key(
+            private_key.encode(),
+            password=passphrase.encode() if passphrase else None,
+            backend=default_backend()
+        )
+    except Exception as e:
+        return str(e)
+
+    # Verify that the private key matches the public key in the certificate
+    cert_public_key = cert.public_key()
+    private_public_key = private_key_obj.public_key()
+
+    # Compare public keys by serializing them
+    try:
+        cert_public_bytes = cert_public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+        private_public_bytes = private_public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+
+        if cert_public_bytes != private_public_bytes:
+            return 'Certificate and private key do not match'
+    except Exception as e:
         return str(e)
 
 
