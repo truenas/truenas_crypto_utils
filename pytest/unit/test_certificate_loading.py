@@ -1,9 +1,13 @@
 import pytest
 import textwrap
 
-from truenas_crypto_utils.read import load_certificate, load_certificate_request, get_serial_from_certificate_safe
+from truenas_crypto_utils.read import (
+    load_certificate, load_certificate_request, get_serial_from_certificate_safe,
+    get_cert_id, parse_cert_date_string, load_private_key
+)
 from truenas_crypto_utils.generate_certs import generate_certificate
 from truenas_crypto_utils.csr import generate_certificate_signing_request
+from truenas_crypto_utils.key import generate_private_key
 
 
 @pytest.fixture
@@ -315,3 +319,111 @@ def test_load_certificate_instead_of_csr():
     # Should fail gracefully
     csr_info = load_certificate_request(cert)
     assert csr_info == {}
+
+
+def test_get_cert_id_with_authority_key_identifier():
+    """Test get_cert_id() with certificate containing AKI"""
+    cert, _ = generate_certificate({
+        'key_type': 'RSA',
+        'key_length': 2048,
+        'common': 'test-cert-id',
+        'digest_algorithm': 'SHA256',
+        'lifetime': 365,
+        'serial': 5001,
+        'cert_extensions': {
+            'BasicConstraints': {'enabled': False},
+            'AuthorityKeyIdentifier': {
+                'enabled': True,
+                'authority_cert_issuer': False,
+            },
+            'ExtendedKeyUsage': {'enabled': False},
+            'KeyUsage': {'enabled': False},
+        },
+    })
+    cert_id = get_cert_id(cert)
+    # Verify format: base64url.base64url
+    assert '.' in cert_id
+    parts = cert_id.split('.')
+    assert len(parts) == 2
+    # Both parts should be non-empty base64url strings
+    assert all(part for part in parts)
+    # base64url should not contain + / = characters
+    assert not any(c in cert_id for c in ['+', '/', '='])
+
+
+def test_get_cert_id_missing_aki():
+    """Test get_cert_id() raises error when AKI is missing"""
+    cert, _ = generate_certificate({
+        'key_type': 'RSA',
+        'key_length': 2048,
+        'common': 'test-no-aki',
+        'digest_algorithm': 'SHA256',
+        'lifetime': 365,
+        'serial': 5002,
+        'cert_extensions': {
+            'BasicConstraints': {'enabled': False},
+            'AuthorityKeyIdentifier': {'enabled': False},
+            'ExtendedKeyUsage': {'enabled': False},
+            'KeyUsage': {'enabled': False},
+        },
+    })
+    with pytest.raises(ValueError, match='missing Authority Key Identifier'):
+        get_cert_id(cert)
+
+
+def test_parse_cert_date_string_bytes():
+    """Test parse_cert_date_string() with bytes input"""
+    date_bytes = b'20250101120000Z'
+    result = parse_cert_date_string(date_bytes)
+    # Should return ctime format
+    assert isinstance(result, str)
+    assert len(result) > 0
+    # Should contain day, month, time, year
+    assert '2025' in result or '2024' in result  # Timezone conversion
+
+
+def test_parse_cert_date_string_str():
+    """Test parse_cert_date_string() with string input"""
+    date_str = '20250101120000Z'
+    result = parse_cert_date_string(date_str)
+    assert isinstance(result, str)
+    assert len(result) > 0
+
+
+def test_load_private_key_rsa():
+    """Test load_private_key() with RSA key"""
+    key_pem = generate_private_key({'type': 'RSA', 'key_length': 2048}, serialize=True)
+    key_obj = load_private_key(key_pem)
+    assert key_obj is not None
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    assert isinstance(key_obj, rsa.RSAPrivateKey)
+
+
+def test_load_private_key_ec():
+    """Test load_private_key() with EC key"""
+    key_pem = generate_private_key({'type': 'EC', 'curve': 'SECP256R1'}, serialize=True)
+    key_obj = load_private_key(key_pem)
+    assert key_obj is not None
+    from cryptography.hazmat.primitives.asymmetric import ec
+    assert isinstance(key_obj, ec.EllipticCurvePrivateKey)
+
+
+def test_load_private_key_ed25519():
+    """Test load_private_key() with Ed25519 key"""
+    key_pem = generate_private_key({'type': 'EC', 'curve': 'ed25519'}, serialize=True)
+    key_obj = load_private_key(key_pem)
+    assert key_obj is not None
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    assert isinstance(key_obj, ed25519.Ed25519PrivateKey)
+
+
+def test_load_private_key_invalid():
+    """Test load_private_key() with invalid key returns None"""
+    key_obj = load_private_key("INVALID KEY DATA")
+    assert key_obj is None
+
+
+def test_load_private_key_empty():
+    """Test load_private_key() with empty string returns None"""
+    key_obj = load_private_key("")
+    assert key_obj is None
