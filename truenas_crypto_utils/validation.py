@@ -98,7 +98,10 @@ def validate_cert_with_chain(cert: str, chain: list[str]) -> bool:
 
     # Use custom extension policies to avoid EKU requirements on generic EE certs,
     # matching PyOpenSSL which doesn't enforce EKU by default.
-    ee_policy = verification.ExtensionPolicy.webpki_defaults_ca() if is_ca_cert else verification.ExtensionPolicy.permit_all()
+    if is_ca_cert:
+        ee_policy = verification.ExtensionPolicy.webpki_defaults_ca()
+    else:
+        ee_policy = verification.ExtensionPolicy.permit_all()
     ca_policy = verification.ExtensionPolicy.webpki_defaults_ca()
 
     builder = (
