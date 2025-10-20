@@ -1,8 +1,9 @@
+import contextlib
 import datetime
 
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec, rsa, ed25519, ed448, padding
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519, ed448
 from cryptography.x509 import verification
 from cryptography.x509.oid import ExtensionOID
 
@@ -12,36 +13,6 @@ from .utils import RE_CERTIFICATE
 
 def _is_self_signed(cert: x509.Certificate) -> bool:
     return cert.issuer == cert.subject
-
-
-def _verify_cert_signature(issuer_pub, subject_cert: x509.Certificate) -> None:
-    """Verify subject_cert's signature using issuer_pub.
-    Raises on failure. Supports RSA (PKCS1v15/PSS), ECDSA, Ed25519, Ed448.
-    """
-    params = getattr(subject_cert, "signature_algorithm_parameters", None)
-
-    if isinstance(issuer_pub, rsa.RSAPublicKey):
-        # Use the parameters embedded in the cert when present (handles RSA-PSS),
-        # otherwise fall back to PKCS#1 v1.5.
-        pad = params if isinstance(params, padding.AsymmetricPadding) else padding.PKCS1v15()
-        issuer_pub.verify(
-            subject_cert.signature,
-            subject_cert.tbs_certificate_bytes,
-            pad,
-            subject_cert.signature_hash_algorithm,
-        )
-    elif isinstance(issuer_pub, ec.EllipticCurvePublicKey):
-        issuer_pub.verify(
-            subject_cert.signature,
-            subject_cert.tbs_certificate_bytes,
-            ec.ECDSA(subject_cert.signature_hash_algorithm),
-        )
-    elif isinstance(issuer_pub, ed25519.Ed25519PublicKey):
-        issuer_pub.verify(subject_cert.signature, subject_cert.tbs_certificate_bytes)
-    elif isinstance(issuer_pub, ed448.Ed448PublicKey):
-        issuer_pub.verify(subject_cert.signature, subject_cert.tbs_certificate_bytes)
-    else:
-        raise ValueError("Unsupported issuer public key type: %r" % type(issuer_pub))
 
 
 def validate_cert_with_chain(cert: str, chain: list[str]) -> bool:
@@ -58,15 +29,16 @@ def validate_cert_with_chain(cert: str, chain: list[str]) -> bool:
     except Exception:
         return False
 
+    if chain is None:
+        return False
+
     # Build list of certificates extracted from the chain inputs
     chain_certs: list[x509.Certificate] = []
-    for chunk in chain:
+    for chunk in filter(bool, chain):
         for pem in RE_CERTIFICATE.findall(chunk):
-            try:
+            with contextlib.suppress(Exception):
+                # Skip malformed certs similar to how pyopenssl did
                 chain_certs.append(x509.load_pem_x509_certificate(pem.encode()))
-            except Exception:
-                # Skip malformed certs to mimic OpenSSL's leniency
-                pass
 
     if not chain_certs:
         return False
@@ -77,78 +49,42 @@ def validate_cert_with_chain(cert: str, chain: list[str]) -> bool:
             if c.public_bytes(serialization.Encoding.PEM) == check_cert.public_bytes(serialization.Encoding.PEM):
                 return True
 
-    # Partition into trust anchors (self-signed) and intermediates
-    trust_anchors = [c for c in chain_certs if _is_self_signed(c)]
-    intermediates = [c for c in chain_certs if not _is_self_signed(c)]
+    # Treat all provided certificates as trust anchors (matches legacy behavior where
+    # everything added to the X509Store was trusted). Intermediates are still supplied
+    # to help chain building.
+    store = verification.Store(chain_certs)
 
-    # If no explicit anchors were provided, mimic OpenSSL by treating all as trusted
-    if not trust_anchors:
-        trust_anchors = chain_certs
-        intermediates = []
+    # Intermediates: everything except the leaf itself
+    check_cert_pem = check_cert.public_bytes(serialization.Encoding.PEM)
+    intermediates = [c for c in chain_certs if c.public_bytes(serialization.Encoding.PEM) != check_cert_pem]
 
-    # Prepare store and policy
-    store = verification.Store(trust_anchors)
-
-    # Determine if target is a CA cert
+    # If the leaf is a CA certificate, relax EE policy to CA defaults so the verifier
+    # does not reject it for being a CA (matches PyOpenSSL behavior where CA leaves
+    # can be accepted against a trusted root).
     try:
         bc = check_cert.extensions.get_extension_for_oid(ExtensionOID.BASIC_CONSTRAINTS).value
         is_ca_cert = bool(bc.ca)
     except x509.ExtensionNotFound:
         is_ca_cert = False
 
-    # Use custom extension policies to avoid EKU requirements on generic EE certs,
-    # matching PyOpenSSL which doesn't enforce EKU by default.
     if is_ca_cert:
         ee_policy = verification.ExtensionPolicy.webpki_defaults_ca()
     else:
         ee_policy = verification.ExtensionPolicy.permit_all()
-    ca_policy = verification.ExtensionPolicy.webpki_defaults_ca()
 
     builder = (
         verification.PolicyBuilder()
         .store(store)
         .time(datetime.datetime.now(datetime.timezone.utc))
-        .extension_policies(ee_policy=ee_policy, ca_policy=ca_policy)
+        .extension_policies(ee_policy=ee_policy, ca_policy=verification.ExtensionPolicy.webpki_defaults_ca())
     )
 
     try:
-        # Prefer the library's path validation when possible.
         verifier = builder.build_client_verifier()
         verifier.verify(check_cert, intermediates)
         return True
     except verification.VerificationError:
-        # Fall back for CA-as-leaf and edge cases to preserve legacy behavior
-        pass
-    except Exception:
-        # Any other failure: attempt a manual signature + minimal RFC checks for CA leaf
-        pass
-
-    # Manual fallback for CA leaf: check issuer in anchors and verify signature & basic constraints
-    if is_ca_cert:
-        for ta in trust_anchors:
-            if ta.subject == check_cert.issuer:
-                try:
-                    _verify_cert_signature(ta.public_key(), check_cert)
-
-                    # Minimal validity checks to stay close to OpenSSL defaults
-                    now = datetime.datetime.now(datetime.timezone.utc)
-                    if now < check_cert.not_valid_before.replace(tzinfo=datetime.timezone.utc):
-                        return False
-                    if now > check_cert.not_valid_after.replace(tzinfo=datetime.timezone.utc):
-                        return False
-
-                    # If KeyUsage is present, require keyCertSign for CA certs
-                    try:
-                        ku = check_cert.extensions.get_extension_for_oid(ExtensionOID.KEY_USAGE).value
-                        if not getattr(ku, "key_cert_sign", False):
-                            return False
-                    except x509.ExtensionNotFound:
-                        pass
-
-                    return True
-                except Exception:
-                    continue
-    return False
+        return False
 
 
 def validate_certificate_with_key(
@@ -190,9 +126,9 @@ def validate_private_key(private_key: str, passphrase: str | None = None) -> str
         return 'A valid private key is required, with a passphrase if one has been set.'
     elif (
         isinstance(
-            private_key_obj, (ec.EllipticCurvePrivateKey, ed25519.Ed25519PrivateKey),
-        ) is False and private_key_obj.key_size < 1024
+            private_key_obj, (ec.EllipticCurvePrivateKey, ed25519.Ed25519PrivateKey, ed448.Ed448PrivateKey),
+        ) is False and hasattr(private_key_obj, 'key_size') and private_key_obj.key_size < 1024
     ):
         # When a cert/ca is being created, disallow keys with size less then 1024
-        # We do not do this check for any EC based key
+        # We do not do this check for any EC based key (including Ed25519/Ed448)
         return 'Key size must be greater than or equal to 1024 bits.'
