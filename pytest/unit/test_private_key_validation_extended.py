@@ -1,7 +1,9 @@
 import textwrap
 
+from cryptography.hazmat.primitives import serialization
 from truenas_crypto_utils.validation import validate_private_key
 from truenas_crypto_utils.key import generate_private_key
+from truenas_crypto_utils.read import load_private_key
 
 
 def test_validate_rsa_2048_key():
@@ -120,3 +122,57 @@ def test_validate_public_key_instead_of_private():
     result = validate_private_key(public_key)
     assert result is not None
     assert 'valid private key is required' in result.lower()
+
+
+# Passphrase handling tests
+
+
+def _encrypt_private_key(key_pem: str, passphrase: str) -> str:
+    """Helper function to encrypt a private key with a passphrase"""
+    key_obj = load_private_key(key_pem)
+    encrypted_key = key_obj.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.BestAvailableEncryption(passphrase.encode())
+    )
+    return encrypted_key.decode()
+
+
+def test_validate_encrypted_rsa_key_correct_passphrase():
+    """Test validation of encrypted RSA key with correct passphrase"""
+    key = generate_private_key({'type': 'RSA', 'key_length': 2048}, serialize=True)
+    passphrase = "test-passphrase-rsa"
+    encrypted_key = _encrypt_private_key(key, passphrase)
+
+    result = validate_private_key(encrypted_key, passphrase)
+    assert result is None
+
+
+def test_validate_encrypted_ec_key_correct_passphrase():
+    """Test validation of encrypted EC key with correct passphrase"""
+    key = generate_private_key({'type': 'EC', 'curve': 'SECP256R1'}, serialize=True)
+    passphrase = "test-passphrase-ec"
+    encrypted_key = _encrypt_private_key(key, passphrase)
+
+    result = validate_private_key(encrypted_key, passphrase)
+    assert result is None
+
+
+def test_validate_encrypted_ed25519_key_correct_passphrase():
+    """Test validation of encrypted Ed25519 key with correct passphrase"""
+    key = generate_private_key({'type': 'EC', 'curve': 'ed25519'}, serialize=True)
+    passphrase = "test-passphrase-ed25519"
+    encrypted_key = _encrypt_private_key(key, passphrase)
+
+    result = validate_private_key(encrypted_key, passphrase)
+    assert result is None
+
+
+# RSA key size boundary tests
+
+
+def test_validate_rsa_8192_key():
+    """Test validation of RSA 8192-bit key (very large but valid)"""
+    key = generate_private_key({'type': 'RSA', 'key_length': 8192}, serialize=True)
+    result = validate_private_key(key)
+    assert result is None
