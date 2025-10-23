@@ -1,4 +1,5 @@
 import json
+import time
 import typing
 
 import josepy as jose
@@ -104,7 +105,20 @@ def acme_order(
     # things like custom metaclass logic. body.authorizations should be a
     # list of strings containing URLs so let's disable this check here.
     for url in body.authorizations:  # pylint: disable=not-an-iterable
-        authorizations.append(acme_client._authzr_from_response(acme_client._post_as_get(url), uri=url))
+        # Retry up to 2 times (3 total attempts) only for transient "No such authorization"
+        # which can occur due to Boulder read-replica lag returning a 404/malformed error
+        # https://community.letsencrypt.org/t/occasional-no-such-authorization/191497/8
+        for attempt in range(3):
+            try:
+                authorizations.append(acme_client._authzr_from_response(acme_client._post_as_get(url), uri=url))
+                break
+            except Exception as e:
+                if 'No such authorization'.lower() in str(e).lower():
+                    if attempt < 2:
+                        time.sleep(1)
+                        continue
+
+                raise
 
     return messages.OrderResource(
         body=body,
