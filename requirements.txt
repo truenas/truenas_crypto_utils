@@ -3,3 +3,4 @@ josepy
 acme
 cryptography
 python-dateutil
+pyOpenSSL
