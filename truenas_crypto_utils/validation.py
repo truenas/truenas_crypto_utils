@@ -1,123 +1,50 @@
-import contextlib
-import datetime
+import itertools
 
-from cryptography import x509
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec, ed25519, ed448
-from cryptography.x509 import verification
-from cryptography.x509.oid import ExtensionOID
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from OpenSSL import crypto, SSL
 
 from .read import load_private_key
 from .utils import RE_CERTIFICATE
 
 
-def _is_self_signed(cert: x509.Certificate) -> bool:
-    return cert.issuer == cert.subject
-
-
 def validate_cert_with_chain(cert: str, chain: list[str]) -> bool:
-    """Validate cert against the given chain, mimicking prior PyOpenSSL behavior.
+    check_cert = crypto.load_certificate(crypto.FILETYPE_PEM, cert)
+    store = crypto.X509Store()
+    for chain_cert in itertools.chain.from_iterable(map(lambda c: RE_CERTIFICATE.findall(c), chain)):
+        store.add_cert(
+            crypto.load_certificate(crypto.FILETYPE_PEM, chain_cert)
+        )
 
-    Behavior notes to match legacy implementation:
-    - Treat any provided certificates as trusted roots (anchors) if they are self-signed.
-    - If no self-signed certificates are present, treat *all* provided certificates as trust anchors.
-    - If the target certificate is self-signed and appears in the chain inputs, accept it as valid.
-    - Do not perform revocation (CRL/OCSP) checks.
-    """
+    store_ctx = crypto.X509StoreContext(store, check_cert)
     try:
-        check_cert = x509.load_pem_x509_certificate(cert.encode())
-    except Exception:
+        store_ctx.verify_certificate()
+    except crypto.X509StoreContextError:
         return False
-
-    if chain is None:
-        return False
-
-    # Build list of certificates extracted from the chain inputs
-    chain_certs: list[x509.Certificate] = []
-    for chunk in filter(bool, chain):
-        for pem in RE_CERTIFICATE.findall(chunk):
-            with contextlib.suppress(Exception):
-                # Skip malformed certs similar to how pyopenssl did
-                chain_certs.append(x509.load_pem_x509_certificate(pem.encode()))
-
-    if not chain_certs:
-        return False
-
-    # Self-signed special case: leaf appears verbatim in the chain
-    if _is_self_signed(check_cert):
-        for c in chain_certs:
-            if c.public_bytes(serialization.Encoding.PEM) == check_cert.public_bytes(serialization.Encoding.PEM):
-                return True
-
-    # Treat all provided certificates as trust anchors (matches legacy behavior where
-    # everything added to the X509Store was trusted). Intermediates are still supplied
-    # to help chain building.
-    store = verification.Store(chain_certs)
-
-    # Intermediates: everything except the leaf itself
-    check_cert_pem = check_cert.public_bytes(serialization.Encoding.PEM)
-    intermediates = [c for c in chain_certs if c.public_bytes(serialization.Encoding.PEM) != check_cert_pem]
-
-    # If the leaf is a CA certificate, relax EE policy to CA defaults so the verifier
-    # does not reject it for being a CA (matches PyOpenSSL behavior where CA leaves
-    # can be accepted against a trusted root).
-    try:
-        bc = check_cert.extensions.get_extension_for_oid(ExtensionOID.BASIC_CONSTRAINTS).value
-        is_ca_cert = bool(bc.ca)
-    except x509.ExtensionNotFound:
-        is_ca_cert = False
-
-    if is_ca_cert:
-        ee_policy = verification.ExtensionPolicy.webpki_defaults_ca()
     else:
-        ee_policy = verification.ExtensionPolicy.permit_all()
-
-    builder = (
-        verification.PolicyBuilder()
-        .store(store)
-        .time(datetime.datetime.now(datetime.timezone.utc))
-        .extension_policies(ee_policy=ee_policy, ca_policy=verification.ExtensionPolicy.webpki_defaults_ca())
-    )
-
-    try:
-        verifier = builder.build_client_verifier()
-        verifier.verify(check_cert, intermediates)
         return True
-    except verification.VerificationError:
-        return False
 
 
 def validate_certificate_with_key(
     certificate: str, private_key: str, passphrase: str | None = None
 ) -> str | None:
     if not certificate or not private_key:
-        return None
+        return
+
+    public_key_obj = crypto.load_certificate(crypto.FILETYPE_PEM, certificate)
+    private_key_obj = crypto.load_privatekey(
+        crypto.FILETYPE_PEM,
+        private_key,
+        passphrase=passphrase.encode() if passphrase else None
+    )
 
     try:
-        cert = x509.load_pem_x509_certificate(certificate.encode())
-        private_key_obj = serialization.load_pem_private_key(
-            private_key.encode(),
-            password=passphrase.encode() if passphrase else None,
-        )
-    except Exception as e:
+        context = SSL.Context(SSL.TLSv1_2_METHOD)
+        context.use_certificate(public_key_obj)
+        context.use_privatekey(private_key_obj)
+        context.check_privatekey()
+    except SSL.Error as e:
         return str(e)
-
-    # Compare public portions
-    try:
-        cert_pub = cert.public_key().public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo,
-        )
-        key_pub = private_key_obj.public_key().public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo,
-        )
-        if cert_pub != key_pub:
-            return "Certificate and private key do not match"
-    except Exception as e:
-        return str(e)
-
-    return None
 
 
 def validate_private_key(private_key: str, passphrase: str | None = None) -> str | None:
@@ -126,9 +53,9 @@ def validate_private_key(private_key: str, passphrase: str | None = None) -> str
         return 'A valid private key is required, with a passphrase if one has been set.'
     elif (
         isinstance(
-            private_key_obj, (ec.EllipticCurvePrivateKey, ed25519.Ed25519PrivateKey, ed448.Ed448PrivateKey),
-        ) is False and hasattr(private_key_obj, 'key_size') and private_key_obj.key_size < 1024
+            private_key_obj, (ec.EllipticCurvePrivateKey, Ed25519PrivateKey),
+        ) is False and private_key_obj.key_size < 1024
     ):
         # When a cert/ca is being created, disallow keys with size less then 1024
-        # We do not do this check for any EC based key (including Ed25519/Ed448)
+        # We do not do this check for any EC based key
         return 'Key size must be greater than or equal to 1024 bits.'
