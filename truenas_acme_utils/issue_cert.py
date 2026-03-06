@@ -61,6 +61,10 @@ def issue_certificate(
                             '\n- Details: ' \
                             f'{challenge.error.detail if challenge.error else "No error details were found"}\n\n'
                 raise CallError(f'Certificate request for final order failed: {msg}')
+        except Exception as e:
+            if hasattr(e, 'extra') and e.extra is None:
+                e.extra = {'order_uri': order.uri}
+            raise
         finally:
             cleanup_authorizations(order, authenticator_mapping, key)
 
