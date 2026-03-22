@@ -3,6 +3,8 @@ import inspect
 
 from cryptography import x509
 
+from .read import GeneratedPrivateKey
+
 
 @functools.cache
 def extensions() -> dict:
@@ -20,7 +22,7 @@ def extensions() -> dict:
 
 
 def get_extension_params(
-    extension: list, cert: x509.CertificateSigningRequestBuilder | x509.CertificateBuilder | None = None,
+    extension: tuple[str, dict], cert: x509.CertificateSigningRequestBuilder | x509.CertificateBuilder | None = None,
     issuer: x509.Certificate | None = None
 ) -> list:
     params = []
@@ -35,17 +37,18 @@ def get_extension_params(
     elif extension[0] == 'KeyUsage':
         params = [extension[1].get(k, False) for k in extensions()['KeyUsage']]
     elif extension[0] == 'AuthorityKeyIdentifier':
+        # CertificateBuilder private attrs have no public API alternative
         params = [
             x509.SubjectKeyIdentifier.from_public_key(
-                issuer.public_key() if issuer else cert._public_key
+                issuer.public_key() if issuer else cert._public_key  # type: ignore[union-attr, arg-type]
             ).digest if cert or issuer else None,
             None, None
         ]
 
         if extension[1]['authority_cert_issuer'] and cert:
             params[1:] = [
-                [x509.DirectoryName(cert._issuer_name)],
-                issuer.serial_number if issuer else cert._serial_number
+                [x509.DirectoryName(cert._issuer_name)],  # type: ignore[union-attr, arg-type]
+                issuer.serial_number if issuer else cert._serial_number  # type: ignore[union-attr]
             ]
 
     return params
@@ -53,7 +56,7 @@ def get_extension_params(
 
 def add_extensions(
     cert: x509.CertificateSigningRequestBuilder | x509.CertificateBuilder, extensions_data: dict,
-    key, issuer=None
+    key: GeneratedPrivateKey, issuer: x509.Certificate | None = None
 ) -> x509.CertificateSigningRequestBuilder | x509.CertificateBuilder:
     # issuer must be a certificate object
     # By default we add the following

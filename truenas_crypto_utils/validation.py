@@ -1,6 +1,6 @@
 import itertools
 
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ec, ed448
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from OpenSSL import crypto, SSL
 
@@ -9,11 +9,11 @@ from .utils import RE_CERTIFICATE
 
 
 def validate_cert_with_chain(cert: str, chain: list[str]) -> bool:
-    check_cert = crypto.load_certificate(crypto.FILETYPE_PEM, cert)
+    check_cert = crypto.load_certificate(crypto.FILETYPE_PEM, cert.encode())
     store = crypto.X509Store()
     for chain_cert in itertools.chain.from_iterable(map(lambda c: RE_CERTIFICATE.findall(c), chain)):
         store.add_cert(
-            crypto.load_certificate(crypto.FILETYPE_PEM, chain_cert)
+            crypto.load_certificate(crypto.FILETYPE_PEM, chain_cert.encode())
         )
 
     store_ctx = crypto.X509StoreContext(store, check_cert)
@@ -29,9 +29,9 @@ def validate_certificate_with_key(
     certificate: str, private_key: str, passphrase: str | None = None
 ) -> str | None:
     if not certificate or not private_key:
-        return
+        return None
 
-    public_key_obj = crypto.load_certificate(crypto.FILETYPE_PEM, certificate)
+    public_key_obj = crypto.load_certificate(crypto.FILETYPE_PEM, certificate.encode())
     private_key_obj = crypto.load_privatekey(
         crypto.FILETYPE_PEM,
         private_key,
@@ -45,6 +45,7 @@ def validate_certificate_with_key(
         context.check_privatekey()
     except SSL.Error as e:
         return str(e)
+    return None
 
 
 def validate_private_key(private_key: str, passphrase: str | None = None) -> str | None:
@@ -52,10 +53,11 @@ def validate_private_key(private_key: str, passphrase: str | None = None) -> str
     if not private_key_obj:
         return 'A valid private key is required, with a passphrase if one has been set.'
     elif (
-        isinstance(
-            private_key_obj, (ec.EllipticCurvePrivateKey, Ed25519PrivateKey),
-        ) is False and private_key_obj.key_size < 1024
+        not isinstance(
+            private_key_obj, (ec.EllipticCurvePrivateKey, Ed25519PrivateKey, ed448.Ed448PrivateKey),
+        ) and private_key_obj.key_size < 1024
     ):
         # When a cert/ca is being created, disallow keys with size less then 1024
         # We do not do this check for any EC based key
         return 'Key size must be greater than or equal to 1024 bits.'
+    return None

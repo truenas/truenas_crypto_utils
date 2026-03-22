@@ -3,11 +3,12 @@ import hashlib
 import datetime
 import dateutil
 import dateutil.parser
+import dateutil.tz
 import logging
 import re
 
 from contextlib import suppress
-from typing import TypeAlias
+from typing import Any, TypeAlias, cast
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed25519, ed448, rsa
@@ -63,10 +64,11 @@ def get_cert_id(cert_str: str) -> str:
     except x509.ExtensionNotFound as e:
         raise ValueError('Certificate missing Authority Key Identifier (AKI)') from e
 
-    if aki_ext.value.key_identifier is None:
+    aki = cast(AuthorityKeyIdentifier, aki_ext.value)
+    if aki.key_identifier is None:
         raise ValueError('AKI keyIdentifier is None')
 
-    aki_b64 = _b64url(aki_ext.value.key_identifier)
+    aki_b64 = _b64url(aki.key_identifier)
     serial_b64 = _b64url(_serial_value_bytes(cert.serial_number))
     return f'{aki_b64}.{serial_b64}'
 
@@ -77,7 +79,7 @@ def parse_cert_date_string(date_value: bytes | str) -> str:
     return t2.ctime()
 
 
-def load_certificate(certificate: str, get_issuer: bool = False) -> dict:
+def load_certificate(certificate: str, get_issuer: bool = False) -> dict[str, Any]:
     try:
         # digest_algorithm, lifetime, country, state, city, organization, organizational_unit,
         # email, common, san, serial, chain, fingerprint
@@ -124,11 +126,14 @@ def load_certificate(certificate: str, get_issuer: bool = False) -> dict:
         return cert_info
 
 
-def _get_name_attribute(name: x509.Name, oid) -> str | None:
+def _get_name_attribute(name: x509.Name, oid: x509.ObjectIdentifier) -> str | None:
     """Helper to extract a single attribute from an x509.Name"""
     try:
         attrs = name.get_attributes_for_oid(oid)
-        return attrs[0].value if attrs else None
+        if not attrs:
+            return None
+        value = attrs[0].value
+        return value if isinstance(value, str) else value.decode()
     except (x509.ExtensionNotFound, IndexError):
         return None
 
@@ -251,9 +256,9 @@ def _format_extension_value(ext) -> str:
         return str(value)
 
 
-def get_x509_subject(obj: x509.Certificate | x509.CertificateSigningRequest) -> dict:
+def get_x509_subject(obj: x509.Certificate | x509.CertificateSigningRequest) -> dict[str, Any]:
     subject = obj.subject
-    cert_info = {
+    cert_info: dict[str, Any] = {
         'country': _get_name_attribute(subject, NameOID.COUNTRY_NAME),
         'state': _get_name_attribute(subject, NameOID.STATE_OR_PROVINCE_NAME),
         'city': _get_name_attribute(subject, NameOID.LOCALITY_NAME),
@@ -317,11 +322,12 @@ def parse_name_components(obj: x509.Name) -> str:
         }
         name = oid_name_map.get(attr.oid, attr.oid._name)
         if name != 'subjectAltName':
-            dn.append(f'{name}={attr.value}')
+            value = attr.value if isinstance(attr.value, str) else attr.value.decode()
+            dn.append(f'{name}={value}')
     return f'/{"/".join(dn)}'
 
 
-def load_certificate_request(csr: str) -> dict:
+def load_certificate_request(csr: str) -> dict[str, Any]:
     try:
         csr_obj = x509.load_pem_x509_csr(csr.encode())
     except ValueError:
@@ -330,18 +336,24 @@ def load_certificate_request(csr: str) -> dict:
         return get_x509_subject(csr_obj)
 
 
-def load_private_key(key_string: str, passphrase: str | None = None) -> PrivateKey:
+def load_private_key(key_string: str, passphrase: str | None = None) -> PrivateKey | None:
     with suppress(ValueError, TypeError, AttributeError):
-        return serialization.load_pem_private_key(
+        key = serialization.load_pem_private_key(
             key_string.encode(),
             password=passphrase.encode() if passphrase else None,
         )
+        if isinstance(key, (rsa.RSAPrivateKey, ec.EllipticCurvePrivateKey, ed25519.Ed25519PrivateKey,
+                            ed448.Ed448PrivateKey, dsa.DSAPrivateKey)):
+            return key
+    return None
 
 
 def get_serial_from_certificate_safe(certificate: str | None) -> int | None:
+    if certificate is None:
+        return None
     try:
         cert = x509.load_pem_x509_certificate(certificate.encode())
-    except (ValueError, AttributeError):
-        return
+    except ValueError:
+        return None
     else:
         return cert.serial_number

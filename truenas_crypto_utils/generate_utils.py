@@ -32,14 +32,14 @@ def generate_builder(options: dict) -> x509.CertificateBuilder | x509.Certificat
         for t, v in options.get('san') or []
     ])
 
-    builder = x509.CertificateSigningRequestBuilder if options.get('csr') else x509.CertificateBuilder
-
-    cert = builder(
-        subject_name=data['crypto_subject_name']
-    )
-
-    if not options.get('csr'):
-        cert = cert.issuer_name(
+    if options.get('csr'):
+        cert: x509.CertificateBuilder | x509.CertificateSigningRequestBuilder = (
+            x509.CertificateSigningRequestBuilder(subject_name=data['crypto_subject_name'])
+        )
+    else:
+        cert = x509.CertificateBuilder(
+            subject_name=data['crypto_subject_name']
+        ).issuer_name(
             data['crypto_issuer_name']
         ).not_valid_before(
             not_valid_before
