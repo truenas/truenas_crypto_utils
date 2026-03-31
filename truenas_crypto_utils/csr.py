@@ -25,6 +25,6 @@ def generate_certificate_signing_request(data: dict) -> tuple[str, str]:
     })
 
     csr = add_extensions(csr, data.get('cert_extensions', {}), key, None)
-    csr = csr.sign(key, retrieve_signing_algorithm(data, key), default_backend())
+    signed_csr = csr.sign(key, retrieve_signing_algorithm(data, key), default_backend())
 
-    return csr.public_bytes(serialization.Encoding.PEM).decode(), export_private_key_object(key)
+    return signed_csr.public_bytes(serialization.Encoding.PEM).decode(), export_private_key_object(key)

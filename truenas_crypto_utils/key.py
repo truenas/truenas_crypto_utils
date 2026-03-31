@@ -32,6 +32,7 @@ def generate_private_key(options: dict, *, serialize: bool = False) -> Generated
     options.setdefault('type', 'RSA')
     options.setdefault('curve', EC_CURVE_DEFAULT)
 
+    key: GeneratedPrivateKey
     if options['type'] == 'EC':
         if options['curve'] == 'ed25519':
             key = Ed25519PrivateKey.generate()
@@ -61,6 +62,7 @@ def export_private_key(buffer: str, passphrase: str | None = None) -> str | None
     key = load_private_key(buffer, passphrase)
     if key:
         return export_private_key_object(key)
+    return None
 
 
 def export_private_key_object(key: PrivateKey) -> str:

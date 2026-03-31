@@ -42,8 +42,8 @@ def generate_certificate(data: dict) -> tuple[str, str]:
 
     cert = add_extensions(generate_builder(builder_data), data.get('cert_extensions', {}), key, issuer)
 
-    cert = cert.sign(
+    signed_cert = cert.sign(
         ca_key or key, retrieve_signing_algorithm(data, ca_key or key), default_backend()
     )
 
-    return cert.public_bytes(serialization.Encoding.PEM).decode(), export_private_key_object(key)
+    return signed_cert.public_bytes(serialization.Encoding.PEM).decode(), export_private_key_object(key)

@@ -92,7 +92,7 @@ def acme_order(
     for ip in ipNames:
         identifiers.append(messages.Identifier(typ=messages.IDENTIFIER_IP, value=str(ip)))
 
-    payload = {'identifiers': identifiers}
+    payload: dict[str, typing.Any] = {'identifiers': identifiers}
     if replaces_cert_id:
         payload['replaces'] = replaces_cert_id
 

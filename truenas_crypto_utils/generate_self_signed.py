@@ -25,7 +25,8 @@ def generate_self_signed_certificate() -> tuple[str, str]:
         'type': 'RSA'
     })
 
-    cert = cert.public_key(
+    assert isinstance(cert, x509.CertificateBuilder)
+    signed_cert = cert.public_key(
         key.public_key()
     ).add_extension(
         x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]), False
@@ -34,7 +35,7 @@ def generate_self_signed_certificate() -> tuple[str, str]:
     )
 
     return (
-        cert.public_bytes(serialization.Encoding.PEM).decode(),
+        signed_cert.public_bytes(serialization.Encoding.PEM).decode(),
         key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,

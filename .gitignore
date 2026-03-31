@@ -22,3 +22,5 @@ __pycache__
 /tests/test-report.xml
 /tests/testfile.txt
 /tests/config.cfg
+build/
+truenas_crypto_utils.egg-info/
