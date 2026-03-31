@@ -11,9 +11,9 @@ def generate_self_signed_certificate() -> tuple[str, str]:
     cert = generate_builder({
         'crypto_subject_name': {
             'country_name': 'US',
-            'organization_name': 'iXsystems',
+            'organization_name': 'iXsystems Inc. dba TrueNAS',
             'common_name': 'localhost',
-            'email_address': 'info@ixsystems.com',
+            'email_address': 'info@truenas.com',
             'state_or_province_name': 'Tennessee',
             'locality_name': 'Maryville',
         },
