@@ -9,12 +9,12 @@ SELF_SIGNED_CERT = {
     'country': 'US',
     'state': 'Tennessee',
     'city': 'Maryville',
-    'organization': 'iXsystems',
+    'organization': 'iXsystems Inc. dba TrueNAS',
     'organizational_unit': None,
     'common': 'localhost',
     'san': ['DNS:localhost'],
-    'email': 'info@ixsystems.com',
-    'DN': '/C=US/O=iXsystems/CN=localhost/emailAddress=info@ixsystems.com/ST=Tennessee/'
+    'email': 'info@truenas.com',
+    'DN': '/C=US/O=iXsystems Inc. dba TrueNAS/CN=localhost/emailAddress=info@truenas.com/ST=Tennessee/'
           'L=Maryville/subjectAltName=DNS:localhost',
     'extensions': {'SubjectAltName': 'DNS:localhost', 'ExtendedKeyUsage': 'TLS Web Server Authentication'},
     'digest_algorithm': 'SHA256',
