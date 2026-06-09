@@ -11,7 +11,14 @@ from .event import send_event
 from .exceptions import CallError
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('acme')
+
+# Each phase gets its own independently-computed deadline so finalize receives a fresh window
+# after authorizations complete (acme.client.poll_and_finalize shares a single deadline between
+# the two). ZeroSSL/Boulder validate and issue in ~2 minutes, so 5 minutes per phase is ~2.5x
+# normal: fail-fast with margin. Tune here if a CA proves slower.
+ACME_AUTHZ_TIMEOUT = datetime.timedelta(minutes=5)
+ACME_FINALIZE_TIMEOUT = datetime.timedelta(minutes=5)
 
 
 def issue_certificate(
@@ -25,8 +32,15 @@ def issue_certificate(
         # perform operations and have a cert issued
         order = acme_order(acme_client, csr.encode(), cert_renewal_id)
     except messages.Error as e:
+        if messages.is_acme_error(e) and e.code == 'rateLimited':
+            raise CallError(
+                f'ACME server rate limited the new order request: {e}. Retrying immediately will not help; '
+                'please wait for the rate limit window to reset before requesting this certificate again.'
+            )
         raise CallError(f'Failed to issue a new order for Certificate : {e}')
     else:
+        identifiers = [i.value for i in order.body.identifiers]
+        logger.info('ACME order placed (uri=%r) for identifiers: %s', order.uri, ', '.join(identifiers))
         send_event(progress_base, 'New order for certificate issuance placed')
 
         authenticator_mapping = {}
@@ -40,14 +54,17 @@ def issue_certificate(
         try:
             handle_authorizations(progress_base, order, authenticator_mapping, acme_client, key)
 
+            # poll_and_finalize of acme lib bundles authorization polling and order finalization under a single
+            # deadline and raises an indistinguishable timeout for either. We split them so each phase
+            # has its own deadline and a failure names the phase that actually hung.
+            logger.info('Entering authorization polling phase for order %r', order.uri)
             try:
-                # Polling for a maximum of 10 minutes while trying to finalize order
-                # Should we try .poll() instead first ? research please
-                return acme_client.poll_and_finalize(
-                    order, datetime.datetime.now() + datetime.timedelta(minutes=10)
-                )
+                order = acme_client.poll_authorizations(order, datetime.datetime.now() + ACME_AUTHZ_TIMEOUT)
             except errors.TimeoutError:
-                raise CallError('Certificate request for final order timed out')
+                raise CallError(
+                    'Certificate request timed out during the authorization phase '
+                    f'(no response within {int(ACME_AUTHZ_TIMEOUT.total_seconds() // 60)} minutes)'
+                )
             except errors.ValidationError as e:
                 msg = ''
                 for authzr in e.failed_authzrs:
@@ -61,6 +78,31 @@ def issue_certificate(
                             '\n- Details: ' \
                             f'{challenge.error.detail if challenge.error else "No error details were found"}\n\n'
                 raise CallError(f'Certificate request for final order failed: {msg}')
+
+            logger.info('Entering finalize phase for order %r', order.uri)
+            try:
+                order = acme_client.finalize_order(order, datetime.datetime.now() + ACME_FINALIZE_TIMEOUT)
+            except errors.TimeoutError:
+                raise CallError(
+                    'Certificate request timed out during the finalize phase '
+                    f'(no certificate issued within {int(ACME_FINALIZE_TIMEOUT.total_seconds() // 60)} minutes)'
+                )
+            except errors.IssuanceError as e:
+                logger.info('Finalize failed (order invalid) for order %r: %s', order.uri, e)
+                raise CallError(f'Certificate request for final order failed: {e}')
+            except messages.Error as e:
+                if messages.is_acme_error(e) and e.code == 'rateLimited':
+                    raise CallError(
+                        f'ACME server rate limited the finalize request: {e}. Retrying immediately will not '
+                        'help; please wait for the rate limit window to reset before requesting this '
+                        'certificate again.'
+                    )
+                detail = getattr(e, 'detail', None) or str(e)
+                logger.info('Finalize failed for order %r: %s', order.uri, detail)
+                raise CallError(f'Certificate request for final order failed: {detail}')
+
+            logger.info('Certificate issued successfully for order %r', order.uri)
+            return order
         except Exception as e:
             if hasattr(e, 'extra') and e.extra is None:
                 e.extra = {'order_uri': order.uri}
