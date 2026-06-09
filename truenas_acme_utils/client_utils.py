@@ -1,10 +1,14 @@
 import json
+import logging
 import time
 import typing
 
 import josepy as jose
 from acme import client, crypto_util, messages
 from cryptography import x509
+
+
+logger = logging.getLogger('acme')
 
 
 class NewOrder(messages.NewOrder):
@@ -119,6 +123,11 @@ def acme_order(
                         continue
 
                 raise
+
+    logger.info(
+        'ACME order created (uri=%s) for identifiers: %s',
+        response.headers.get('Location'), ', '.join(i.value for i in body.identifiers),
+    )
 
     return messages.OrderResource(
         body=body,
