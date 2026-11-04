@@ -46,7 +46,10 @@ def fetch_renewal_info(ari_endpoint: str, cert_id: str, retries: int = MAX_RETRI
                 return {'error': f'ARI server error after {retries + 1} attempts: HTTP {response.status_code}'}
 
             if response.status_code not in (200, 201, 204):
-                return {'error': f'ARI request failed: HTTP {response.status_code}'}
+                return {
+                    'error': f'ARI request failed: HTTP {response.status_code}: {response.text[:500]}',
+                    'status_code': response.status_code,
+                }
 
             data = response.json()
             break

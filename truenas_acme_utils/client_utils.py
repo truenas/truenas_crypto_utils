@@ -4,7 +4,7 @@ import time
 import typing
 
 import josepy as jose
-from acme import client, crypto_util, messages
+from acme import client, crypto_util, errors, messages
 from cryptography import x509
 
 
@@ -100,8 +100,15 @@ def acme_order(
     if replaces_cert_id:
         payload['replaces'] = replaces_cert_id
 
-    order = NewOrder(**payload)
-    response = acme_client._post(acme_client.directory['newOrder'], order)
+    try:
+        response = acme_client._post(acme_client.directory['newOrder'], NewOrder(**payload))
+    except errors.ConflictError:
+        if not replaces_cert_id:
+            raise
+        # acme raises ConflictError for every 409 and discards the problem document, so alreadyReplaced
+        # (RFC 9773) cannot be matched by error type.
+        logger.warning('ACME server rejected replacing %r, placing the order without it', replaces_cert_id)
+        response = acme_client._post(acme_client.directory['newOrder'], NewOrder(identifiers=identifiers))
     body = messages.Order.from_json(response.json())
 
     authorizations = []
